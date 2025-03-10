@@ -24,7 +24,7 @@ firmware.bin: firmware.elf
 > arm-none-eabi-objcopy -O binary $< $@
 
 flash: firmware.bin
-> STM32_Programmer_CLI -c port=SWD freq=4000 -w $< 0x08000000
+> openocd -f interface/stlink.cfg -f target/stm32wbx.cfg -c "program firmware.elf verify reset exit"
 
 clean:
 > rm firmware.*

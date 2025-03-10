@@ -65,11 +65,6 @@ int
 main(void) {
 
 	uint16_t led = PIN('B', 5);
-	RCC->AHB2ENR |= BIT(PINBANK(led));
-	systick_init(16000000/1000);
-	gpio_set_mode(led, GPIO_MODE_OUTPUT);
-
-
 	uint32_t timer, period = 500;
 	for (;;) {
 		if (timer_expired(&timer, period, s_ticks)) {
@@ -88,6 +83,12 @@ SysTick_Handler(void) {
 
 void SystemInit(void)
 {
+	uint16_t led = PIN('B', 5);
+
+	RCC->AHB2ENR |= BIT(PINBANK(led));
+	gpio_set_mode(led, GPIO_MODE_OUTPUT);
+
+	systick_init(16000000/1000);
 }
 
 void SystemCoreClockUpdate(void)
