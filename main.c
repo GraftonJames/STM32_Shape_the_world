@@ -12,7 +12,7 @@ enum {GPIO_MODE_INPUT, GPIO_MODE_OUTPUT, GPIO_MODE_AF, GPIO_MODE_ANALOG};
 #define GPIO(bank) ((GPIO_TypeDef *) (GPIOA_BASE + 0x400U * (bank))) 
 
 static inline void
-gpio_set_mode(uint16_t pin, uint8_t mode)
+gpio_set_mode(uint32_t pin, uint8_t mode)
 {
 	GPIO_TypeDef *gpio = GPIO(PINBANK(pin));
 	uint8_t n = PINNO(pin);
@@ -22,7 +22,7 @@ gpio_set_mode(uint16_t pin, uint8_t mode)
 }
 
 static inline void
-gpio_write(uint16_t pin, bool val)
+gpio_write(uint32_t pin, bool val)
 {
 	GPIO_TypeDef *gpio = GPIO(PINBANK(pin));
 	gpio->BSRR = (1U << PINNO(pin)) << (val ? 0 : 16);
@@ -62,15 +62,21 @@ timer_expired(uint32_t *t, uint32_t prd, uint32_t now)
 }
 
 int
-main(void) {
-
-	uint16_t led = PIN('B', 5);
-	uint32_t timer, period = 500;
-	for (;;) {
-		if (timer_expired(&timer, period, s_ticks)) {
-			static bool on;
-			gpio_write(led, on);
-			on = !on;
+main(void)
+{
+	GPIO_TypeDef *gpiob = GPIO(PINBANK(PIN('B', 0)));
+	uint32_t out = PIN('B',4);
+	bool blink = true;
+	
+	while(1) {
+		bool arm = (bool) (gpiob->IDR & GPIO_IDR_ID0);
+		bool sensor = (bool) (gpiob->IDR & (GPIO_IDR_ID1 | GPIO_IDR_ID2));
+		if (sensor && arm) {
+			gpio_write(out, blink);
+			blink = !blink;
+			delay(100);
+		} else {
+			gpio_write(out, false);
 		}
 	}
 	return 0;
@@ -83,12 +89,19 @@ SysTick_Handler(void) {
 
 void SystemInit(void)
 {
-	uint16_t led = PIN('B', 5);
+	systick_init(10000);
 
-	RCC->AHB2ENR |= BIT(PINBANK(led));
-	gpio_set_mode(led, GPIO_MODE_OUTPUT);
+	uint16_t in1 = PIN('B', 0);
+	uint16_t in2 = PIN('B', 1);
+	uint16_t in3 = PIN('B', 2);
+	uint16_t out_pin = PIN('B', 4);
 
-	systick_init(16000000/1000);
+	RCC->AHB2ENR |= BIT(PINBANK(in1));
+	gpio_set_mode(in1, GPIO_MODE_INPUT);
+	gpio_set_mode(in2, GPIO_MODE_INPUT);
+	gpio_set_mode(in3, GPIO_MODE_INPUT);
+	gpio_set_mode(out_pin, GPIO_MODE_OUTPUT);
+
 }
 
 void SystemCoreClockUpdate(void)
