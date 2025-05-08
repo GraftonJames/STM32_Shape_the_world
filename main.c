@@ -87,6 +87,11 @@ SysTick_Handler(void) {
 	s_ticks++;
 }
 
+void
+_init(void) {
+	return;
+}
+
 void SystemInit(void)
 {
 	systick_init(10000);
