@@ -7,6 +7,7 @@
 #define PIN(bank, num) ((((bank) - 'A') << 8) | (num))
 #define PINNO(pin) ((uint8_t) pin & 255)
 #define PINBANK(pin) (pin >> 8)
+#define BANK(bank) ((bank) - 'A')
 
 enum {GPIO_MODE_INPUT, GPIO_MODE_OUTPUT, GPIO_MODE_AF, GPIO_MODE_ANALOG};
 #define GPIO(bank) ((GPIO_TypeDef *) (GPIOA_BASE + 0x400U * (bank))) 
@@ -18,7 +19,7 @@ gpio_set_mode(uint32_t pin, uint8_t mode)
 	uint8_t n = PINNO(pin);
 
 	gpio->MODER &= ~(3U << (n * 2));
-	gpio->MODER |=	(mode & 3) << (n * 2);
+        gpio->MODER |= (mode & 3) << (n * 2);
 }
 
 static inline void
@@ -27,6 +28,43 @@ gpio_write(uint32_t pin, bool val)
 	GPIO_TypeDef *gpio = GPIO(PINBANK(pin));
 	gpio->BSRR = (1U << PINNO(pin)) << (val ? 0 : 16);
 }
+
+
+int
+main(void)
+{
+	while(true) {};
+}
+
+const uint32_t sine_wave[16] = {4,5,6,7,7,7,6,5,4,3,2,1,1,1,2,3};
+const uint32_t sheet_music[] = {1, 1};
+uint32_t i = 0;
+uint8_t period = 0;
+const uint32_t *note = &sheet_music[0];
+
+void
+DAC_out(uint32_t val) 
+{	
+	GPIO_TypeDef *gpiob = GPIO(BANK('B'));
+	// sets bits
+	gpiob->BSRR = val | (~val << 16);
+}
+
+void
+SysTick_Handler(void)
+{
+	i = (i+1)&0x000F;
+	DAC_out(sine_wave[i]);
+	return;
+}
+
+void 
+TIM1_UP_IRQHandler()
+{
+	
+}
+
+void _init(void) { return; }
 
 static inline void
 systick_init(uint32_t ticks)
@@ -39,76 +77,31 @@ systick_init(uint32_t ticks)
 }
 
 static inline void
-spin(volatile uint32_t count)
+tim2_init()
 {
-	while (count--) (void) 0;
+	TIM2->PSC = 999;
+	TIM2->ARR = 999;
+	TIM2->DIER &= BIT(0);
 }
-static volatile uint32_t s_ticks;
 void
-delay(unsigned ms)
+SystemInit(void)
 {
-	uint32_t until = s_ticks + ms;
-	while (s_ticks < until) (void) 0;
-}
+	// Default clock msi at 4MHz 568 for 440hz sin wave
+	systick_init(568);
+	tim2_init();
 
-bool
-timer_expired(uint32_t *t, uint32_t prd, uint32_t now)
-{
-	if (now + prd < *t) *t = 0;
-	if (*t == 0) *t = now + prd;
-	if (*t > now) return false;
-	*t = (now - *t) > prd ? now + prd : *t + prd;
-	return true;
-}
+	uint16_t out1 = PIN('B', 1);
+	uint16_t out2 = PIN('B', 2);
+	uint16_t out3 = PIN('B', 3);
 
-int
-main(void)
-{
-	GPIO_TypeDef *gpiob = GPIO(PINBANK(PIN('B', 0)));
-	uint32_t out = PIN('B',4);
-	bool blink = true;
-	
-	while(1) {
-		bool arm = (bool) (gpiob->IDR & GPIO_IDR_ID0);
-		bool sensor = (bool) (gpiob->IDR & (GPIO_IDR_ID1 | GPIO_IDR_ID2));
-		if (sensor && arm) {
-			gpio_write(out, blink);
-			blink = !blink;
-			delay(100);
-		} else {
-			gpio_write(out, false);
-		}
-	}
-	return 0;
+	RCC->AHB2ENR |= BIT(PINBANK(out1));
+	gpio_set_mode(out1, GPIO_MODE_OUTPUT);
+	gpio_set_mode(out2, GPIO_MODE_OUTPUT);
+	gpio_set_mode(out3, GPIO_MODE_OUTPUT);
+
 }
 
 void
-SysTick_Handler(void) {
-	s_ticks++;
-}
-
-void
-_init(void) {
-	return;
-}
-
-void SystemInit(void)
-{
-	systick_init(10000);
-
-	uint16_t in1 = PIN('B', 0);
-	uint16_t in2 = PIN('B', 1);
-	uint16_t in3 = PIN('B', 2);
-	uint16_t out_pin = PIN('B', 4);
-
-	RCC->AHB2ENR |= BIT(PINBANK(in1));
-	gpio_set_mode(in1, GPIO_MODE_INPUT);
-	gpio_set_mode(in2, GPIO_MODE_INPUT);
-	gpio_set_mode(in3, GPIO_MODE_INPUT);
-	gpio_set_mode(out_pin, GPIO_MODE_OUTPUT);
-
-}
-
-void SystemCoreClockUpdate(void)
+SystemCoreClockUpdate(void)
 {
 }
