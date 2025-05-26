@@ -3,6 +3,8 @@
 
 #include "stm32wb15xx.h"
 
+#define SystemClkRt ((uint16_t) 4000000)
+
 #define BIT(x) (1UL << (x))
 #define PIN(bank, num) ((((bank) - 'A') << 8) | (num))
 #define PINNO(pin) ((uint8_t) pin & 255)
@@ -11,6 +13,11 @@
 
 enum {GPIO_MODE_INPUT, GPIO_MODE_OUTPUT, GPIO_MODE_AF, GPIO_MODE_ANALOG};
 #define GPIO(bank) ((GPIO_TypeDef *) (GPIOA_BASE + 0x400U * (bank))) 
+
+uint32_t wait = 2;
+struct note *cur;
+volatile bool led_on = false;
+uint16_t buadrate = 9600;
 
 static inline void
 gpio_set_mode(uint32_t pin, uint8_t mode)
@@ -67,19 +74,26 @@ struct note sheet_music[] = {
 	{1, 262, 8},
 	{0, 0, 0}
 };
-uint32_t wait = 2;
-struct note *cur;
-volatile bool led_on = false;
+
+void
+USART_tran(uint8_t m)
+{
+	while (!(USART1->ISR & USART_ISR_TXFT));
+	USART1->TDR = m;
+}
 
 int
 main(void)
 {
+
+	// init after mem init
 	cur = &sheet_music[0];
+
+	
+
+
 	return 1;
 }
-
-
-// const uint32_t *note = &sheet_music[0];
 
 void
 DAC_out(uint32_t val) 
@@ -101,6 +115,15 @@ SysTick_Handler(void)
 	return;
 }
 
+void
+play_note(struct note *n)
+{
+	uint32_t oct_mult = 1;
+	for (int j = 1; j < n->oct; j++) oct_mult *= 2;
+	SysTick->LOAD = (250000) / (n->freq * oct_mult);
+	wait = n->period;
+}
+
 void 
 TIM2_IRQHandler(void)
 {
@@ -108,10 +131,7 @@ TIM2_IRQHandler(void)
 	if (--wait != 0) return;
 	cur++;
 	if (cur->freq == 0 && cur->period == 0) cur = &sheet_music[0];
-	uint32_t oct_mult = 1;
-	for (int j = 1; j < cur->oct; j++) oct_mult *= 2;
-	SysTick->LOAD = (250000) / (cur->freq * oct_mult);
-	wait = cur->period;
+	play_note(cur);
 }
 
 void _init(void) { return; }
@@ -142,11 +162,44 @@ tim2_init()
 	NVIC_EnableIRQ(TIM2_IRQn);
 	TIM2->CR1 |= TIM_CR1_CEN;
 }
+
+static inline void
+uart_init()
+{
+	RCC->AHB2ENR &= RCC_AHB2ENR_GPIOAEN;
+	RCC->APB2ENR &= RCC_APB2ENR_USART1EN;
+
+	uint16_t uartdiv = SystemClkRt / buadrate;
+	USART1->BRR = (uint32_t) ((uartdiv /16) << 4) | (uartdiv % 16);
+
+
+	GPIO_TypeDef *gpioa = GPIO(BANK('A'));
+
+	uint16_t uart_ck = PIN('A', 8);
+	uint16_t uart_tx = PIN('A', 9);
+	uint16_t uart_rx = PIN('A', 10);
+	// uint16_t uart_cts = PIN('A', 11);
+
+	gpio_set_mode(uart_ck, GPIO_MODE_AF);
+	gpio_set_mode(uart_tx, GPIO_MODE_AF);
+	gpio_set_mode(uart_rx, GPIO_MODE_AF);
+
+	// enable USART Alternate Function registers
+	gpioa->AFR[1] &= 7UL << GPIO_AFRH_AFSEL8_Pos;
+	gpioa->AFR[1] &= 7UL << GPIO_AFRH_AFSEL9_Pos;
+	gpioa->AFR[1] &= 7UL << GPIO_AFRH_AFSEL10_Pos;
+
+	// enable USART Transmitter FIFO and enable
+	USART1->CR1 &= USART_CR1_TE & USART_CR1_FIFOEN & USART_CR1_UE;
+}
 void
 SystemInit(void)
 {
 	// Default clock msi at 4MHz
 	systick_init(1000);
+	uart_init();
+
+
 
 	uint16_t out1 = PIN('B', 1);
 	uint16_t out2 = PIN('B', 2);
